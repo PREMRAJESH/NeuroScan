@@ -1,0 +1,17 @@
+{
+  "model_file": "brain_tumor_model_efficientnet.keras",
+  "backbone": "EfficientNetB0 ImageNet",
+  "class_names": [
+    "glioma",
+    "meningioma",
+    "notumor",
+    "pituitary"
+  ],
+  "image_size": [
+    224,
+    224
+  ],
+  "test_accuracy": 0.9405034184455872,
+  "test_loss": 0.17792075872421265,
+  "epochs_run": 40
+}

@@ -3,115 +3,289 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Brain Tumor Detection - AI Powered MRI Analysis</title>
+    <title>NeuroScan AI - MRI Analysis Workbench</title>
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-    <div class="container">
-        <!-- Header -->
-        <header class="header">
-            <div class="header-content">
-                <div class="logo">
-                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z" fill="currentColor"/>
-                        <circle cx="12" cy="12" r="3" fill="currentColor"/>
-                    </svg>
-                    <h1>Brain Tumor Detection</h1>
-                </div>
-                <p class="subtitle">AI-Powered MRI Scan Analysis</p>
-            </div>
-        </header>
+    <div class="app-shell">
+        <aside class="sidebar" aria-label="Workspace navigation">
+            <a class="brand" href="#workspace" aria-label="NeuroScan AI home">
+                <span class="brand-mark">NS</span>
+                <span>
+                    <strong>NeuroScan AI</strong>
+                    <small>MRI analysis workbench</small>
+                </span>
+            </a>
 
-        <!-- Main Content -->
-        <main class="main-content">
-            <!-- Upload Section -->
-            <div class="upload-section">
-                <div class="upload-card">
-                    <h2>Upload MRI Scan</h2>
-                    <p class="upload-description">Upload a brain MRI scan to detect potential tumors</p>
-                    
-                    <div class="upload-area" id="uploadArea">
-                        <input type="file" id="fileInput" accept="image/png, image/jpeg, image/jpg" hidden>
-                        <div class="upload-content">
-                            <svg class="upload-icon" width="64" height="64" viewBox="0 0 24 24" fill="none">
-                                <path d="M19 13V19H5V13H3V19C3 20.1 3.9 21 5 21H19C20.1 21 21 20.1 21 19V13H19Z" fill="currentColor"/>
-                                <path d="M13 5.83L15.59 8.42L17 7L12 2L7 7L8.41 8.42L11 5.83V15H13V5.83Z" fill="currentColor"/>
-                            </svg>
-                            <p class="upload-text">Drag & drop your MRI scan here</p>
-                            <p class="upload-subtext">or</p>
-                            <button class="upload-button" onclick="document.getElementById('fileInput').click()">
-                                Browse Files
+            <nav class="side-nav" aria-label="Primary navigation">
+                <a class="active" href="#workspace">Workbench</a>
+                <a href="#model">Model Evidence</a>
+                <a href="#classes">Class Reference</a>
+                <a href="#safety">Clinical Guardrails</a>
+            </nav>
+
+            <div class="sidebar-note">
+                <span class="note-kicker">Environment</span>
+                <strong>Local inference</strong>
+                <small>Flask and TensorFlow runtime</small>
+            </div>
+        </aside>
+
+        <div class="main-column">
+            <header class="topbar">
+                <button class="nav-toggle" id="navToggle" type="button" aria-expanded="false" aria-controls="mobileNav">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                    <span class="sr-only">Open navigation</span>
+                </button>
+
+                <div class="topbar-title">
+                    <span>Brain Tumor Detection</span>
+                    <strong>MRI triage support</strong>
+                </div>
+
+                <div class="status-pill" id="modelStatus" data-state="checking">
+                    <span class="status-dot" aria-hidden="true"></span>
+                    <span id="modelStatusText">Checking model status...</span>
+                </div>
+            </header>
+
+            <nav class="mobile-nav" id="mobileNav" aria-label="Mobile navigation">
+                <a class="active" href="#workspace">Workbench</a>
+                <a href="#model">Model Evidence</a>
+                <a href="#classes">Class Reference</a>
+                <a href="#safety">Clinical Guardrails</a>
+            </nav>
+
+            <main>
+                <section class="workspace-section" id="workspace" data-stage="empty">
+                    <div class="workspace-header">
+                        <div>
+                            <p class="eyebrow">Case intake</p>
+                            <h1>MRI Analysis Workbench</h1>
+                            <p>Upload one brain MRI image, inspect the selected scan, then review confidence and class distribution after local inference.</p>
+                        </div>
+                        <div class="case-meta" aria-label="Model summary">
+                            <div>
+                                <span>Classes</span>
+                                <strong id="classCount">4</strong>
+                            </div>
+                            <div>
+                                <span>Input</span>
+                                <strong id="imageSize">224 x 224</strong>
+                            </div>
+                            <div>
+                                <span>Model</span>
+                                <strong id="modelFile">Loading</strong>
+                            </div>
+                            <div>
+                                <span>Accuracy</span>
+                                <strong id="testAccuracy">--</strong>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="workbench-grid" id="workbenchGrid">
+                        <section class="panel upload-panel" aria-labelledby="uploadTitle">
+                            <div class="panel-header">
+                                <div>
+                                    <p class="eyebrow">Scan input</p>
+                                    <h2 id="uploadTitle">Upload scan</h2>
+                                    <p class="panel-intro">Start with a single MRI image. Results stay hidden until a case is active.</p>
+                                </div>
+                                <span class="support-chip">PNG or JPG</span>
+                            </div>
+
+                            <div class="upload-area" id="uploadArea">
+                                <input type="file" id="fileInput" accept="image/png, image/jpeg, image/jpg" hidden>
+                                <div class="upload-content">
+                                    <div class="upload-icon" aria-hidden="true">
+                                        <svg width="34" height="34" viewBox="0 0 24 24" fill="none">
+                                            <path d="M12 3v11m0-11 4 4m-4-4-4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                            <path d="M5 14v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                                        </svg>
+                                    </div>
+                                    <h3>Drop brain MRI scan</h3>
+                                    <p>PNG or JPG under 16 MB</p>
+                                    <button class="secondary-button" id="browseButton" type="button">Browse files</button>
+                                </div>
+                            </div>
+
+                            <div class="image-preview" id="imagePreview" hidden>
+                                <img id="previewImg" src="" alt="Selected MRI preview">
+                                <div class="preview-actions">
+                                    <div>
+                                        <span id="fileName">Selected image</span>
+                                        <small id="fileMeta">Ready for analysis</small>
+                                    </div>
+                                    <button class="icon-button" id="removeImage" type="button" aria-label="Remove selected image">x</button>
+                                </div>
+                            </div>
+
+                            <div class="upload-checklist" aria-label="Upload validation">
+                                <span>MRI image only</span>
+                                <span>224 x 224 preprocessing</span>
+                                <span>Local inference</span>
+                            </div>
+
+                            <div class="workflow-guide" id="workflowGuide" aria-label="Analysis workflow">
+                                <div>
+                                    <span>01</span>
+                                    <strong>Upload</strong>
+                                    <small>Select one scan from the case workspace.</small>
+                                </div>
+                                <div>
+                                    <span>02</span>
+                                    <strong>Analyze</strong>
+                                    <small>Run the local TensorFlow model.</small>
+                                </div>
+                                <div>
+                                    <span>03</span>
+                                    <strong>Review</strong>
+                                    <small>Compare confidence, spread, and reference classes.</small>
+                                </div>
+                            </div>
+
+                            <button class="primary-button analyze-button" id="analyzeButton" type="button" disabled>
+                                <span class="button-text">Analyze scan</span>
+                                <span class="button-loader" hidden>
+                                    <span class="loader" aria-hidden="true"></span>
+                                    Processing
+                                </span>
                             </button>
-                            <p class="upload-hint">Supported formats: JPG, PNG, JPEG (Max 16MB)</p>
-                        </div>
+
+                            <div class="error-message" id="errorMessage" hidden>
+                                <strong>Unable to process scan</strong>
+                                <span id="errorText">An error occurred.</span>
+                            </div>
+                        </section>
+
+                        <section class="panel result-panel" id="resultsSection" data-state="empty" aria-live="polite" aria-hidden="true">
+                            <div class="panel-header">
+                                <div>
+                                    <p class="eyebrow">Prediction</p>
+                                    <h2 id="resultDiagnosis">Awaiting scan</h2>
+                                </div>
+                                <span class="result-badge" id="resultBadge">No case</span>
+                            </div>
+
+                            <div class="empty-result" id="emptyResult">
+                                <div class="empty-visual" aria-hidden="true">
+                                    <span></span>
+                                    <span></span>
+                                    <span></span>
+                                </div>
+                                <p id="emptyResultText">Select a scan to generate a result summary.</p>
+                            </div>
+
+                            <div class="result-content" id="resultContent" hidden>
+                                <p id="resultMessage">The prediction summary will appear here after analysis.</p>
+
+                                <div class="confidence-card">
+                                    <span>Confidence</span>
+                                    <strong id="confidenceValue">0%</strong>
+                                    <div class="confidence-bar" aria-hidden="true">
+                                        <div class="confidence-fill" id="confidenceFill"></div>
+                                    </div>
+                                </div>
+
+                                <div class="probability-panel">
+                                    <div class="subsection-title">
+                                        <h3>Class probabilities</h3>
+                                        <span>Sorted high to low</span>
+                                    </div>
+                                    <div class="probability-list" id="probabilityList"></div>
+                                </div>
+
+                                <button class="secondary-button" id="newScanButton" type="button">Analyze another scan</button>
+                            </div>
+                        </section>
+                    </div>
+                </section>
+
+                <section class="content-section" id="model">
+                    <div class="section-heading">
+                        <p class="eyebrow">Model evidence</p>
+                        <h2>Evaluation artifacts</h2>
+                        <p>Training curves, confusion matrix, and Grad-CAM outputs are loaded from the project artifacts.</p>
                     </div>
 
-                    <div class="image-preview" id="imagePreview" style="display: none;">
-                        <img id="previewImg" src="" alt="Preview">
-                        <button class="remove-image" id="removeImage">×</button>
+                    <div class="artifact-grid" id="artifactGrid">
+                        <article class="artifact-card" data-artifact="training-history">
+                            <div class="artifact-image-wrap">
+                                <img alt="Training history plot" loading="lazy">
+                            </div>
+                            <div>
+                                <h3>Training history</h3>
+                                <p>Accuracy and loss over the training run.</p>
+                            </div>
+                        </article>
+                        <article class="artifact-card" data-artifact="confusion-matrix">
+                            <div class="artifact-image-wrap">
+                                <img alt="Confusion matrix" loading="lazy">
+                            </div>
+                            <div>
+                                <h3>Confusion matrix</h3>
+                                <p>Class-level evaluation distribution.</p>
+                            </div>
+                        </article>
+                        <article class="artifact-card" data-artifact="gradcam">
+                            <div class="artifact-image-wrap">
+                                <img alt="Grad-CAM visualization" loading="lazy">
+                            </div>
+                            <div>
+                                <h3>Grad-CAM view</h3>
+                                <p>Representative model attention overlay.</p>
+                            </div>
+                        </article>
                     </div>
+                </section>
 
-                    <button class="analyze-button" id="analyzeButton" disabled>
-                        <span class="button-text">Analyze Scan</span>
-                        <span class="button-loader" style="display: none;">
-                            <span class="loader"></span> Analyzing...
-                        </span>
-                    </button>
-                </div>
-            </div>
-
-            <!-- Results Section -->
-            <div class="results-section" id="resultsSection" style="display: none;">
-                <div class="results-card">
-                    <h2>Analysis Results</h2>
-                    
-                    <div class="result-main">
-                        <div class="result-icon" id="resultIcon">
-                            <!-- Icon will be added via JS -->
-                        </div>
-                        <h3 class="result-diagnosis" id="resultDiagnosis">-</h3>
-                        <div class="confidence-score">
-                            <span class="confidence-label">Confidence Score</span>
-                            <span class="confidence-value" id="confidenceValue">-</span>
-                        </div>
-                        <div class="confidence-bar">
-                            <div class="confidence-fill" id="confidenceFill" style="width: 0%"></div>
-                        </div>
+                <section class="content-section" id="classes">
+                    <div class="section-heading">
+                        <p class="eyebrow">Reference</p>
+                        <h2>Supported classes</h2>
+                        <p>The output order matches the trained Keras model.</p>
                     </div>
+                    <div class="class-grid" id="classGrid" aria-live="polite"></div>
+                </section>
 
-                    <div class="detailed-results">
-                        <h4>Detailed Probabilities</h4>
-                        <div class="probability-list" id="probabilityList">
-                            <!-- Probabilities will be added via JS -->
-                        </div>
+                <section class="content-section guardrail-section" id="safety">
+                    <div class="guardrail-copy">
+                        <p class="eyebrow">Clinical guardrails</p>
+                        <h2>Research support only</h2>
+                        <p>Use the output as a research signal alongside full imaging context and professional medical review.</p>
                     </div>
-
-                    <div class="disclaimer">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-                            <path d="M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z" fill="currentColor"/>
-                        </svg>
-                        <p><strong>Medical Disclaimer:</strong> This tool is for educational and research purposes only. Always consult with qualified medical professionals for actual diagnosis and treatment.</p>
+                    <div class="guardrail-grid">
+                        <article>
+                            <span>01</span>
+                            <h3>Validate scan type</h3>
+                            <p>MRI-only inputs produce the most reliable model behavior.</p>
+                        </article>
+                        <article>
+                            <span>02</span>
+                            <h3>Review confidence</h3>
+                            <p>Low or close probabilities need extra scrutiny.</p>
+                        </article>
+                        <article>
+                            <span>03</span>
+                            <h3>Confirm clinically</h3>
+                            <p>Do not use this output for care decisions.</p>
+                        </article>
                     </div>
+                </section>
+            </main>
+        </div>
+    </div>
 
-                    <button class="new-scan-button" id="newScanButton">
-                        Analyze Another Scan
-                    </button>
-                </div>
-            </div>
-
-            <!-- Error Message -->
-            <div class="error-message" id="errorMessage" style="display: none;">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" fill="currentColor"/>
-                </svg>
-                <span id="errorText">An error occurred</span>
-            </div>
-        </main>
-
-        <!-- Footer -->
-        <footer class="footer">
-            <p>Powered by TensorFlow & EfficientNetB0 | Built for Medical AI Research</p>
-        </footer>
+    <!-- Image Zoom Lightbox Modal -->
+    <div id="imageLightbox" class="lightbox" hidden aria-label="Image Preview Modal">
+        <button class="lightbox-close" id="lightboxClose" type="button" aria-label="Close preview">&times;</button>
+        <div class="lightbox-content">
+            <img id="lightboxImg" src="" alt="Enlarged preview">
+            <div id="lightboxCaption" class="lightbox-caption"></div>
+        </div>
     </div>
 
     <script src="/static/script.js"></script>
