@@ -14,7 +14,6 @@ from uuid import uuid4
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 
 import numpy as np
-import onnxruntime as ort
 from flask import Flask, Response, jsonify, request, send_from_directory
 from PIL import Image
 from werkzeug.utils import secure_filename
@@ -183,6 +182,8 @@ def load_prediction_model():
         return None, f"Model file not found at {MODEL_PATH}"
 
     try:
+        import onnxruntime as ort
+
         session = ort.InferenceSession(str(MODEL_PATH), providers=["CPUExecutionProvider"])
         input_info = session.get_inputs()[0]
         output_info = session.get_outputs()[0]
