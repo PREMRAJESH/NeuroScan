@@ -2,18 +2,19 @@
 Brain Tumor Detection - Flask Web Application.
 
 Provides a web interface for uploading MRI scans and getting predictions from
-the trained local Keras model.
+a Hugging Face model inference API.
 """
 
 import os
 from html import escape
 from pathlib import Path
 from uuid import uuid4
-
-# Keep TensorFlow startup quiet. This has to happen before TensorFlow imports.
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
+import json
+import base64
+import io
 
 import numpy as np
+import requests
 from flask import Flask, Response, jsonify, request, send_from_directory
 from PIL import Image
 from werkzeug.utils import secure_filename
@@ -25,7 +26,11 @@ UPLOAD_FOLDER = BASE_DIR / "uploads"
 STATIC_FOLDER = BASE_DIR / "static"
 DATASET_FOLDER = BASE_DIR / "brain_tumor_dataset"
 MODEL_METADATA_PATH = BASE_DIR / "model_metadata.json"
-MODEL_PATH = BASE_DIR / "brain_tumor_model_efficientnet.keras"
+
+# Hugging Face inference configuration
+HF_API_TOKEN = os.environ.get("HF_API_TOKEN", "")
+HF_MODEL_ID = os.environ.get("HF_MODEL_ID", "premrajesh/brain-tumor-detector")
+HF_API_URL = f"https://api-inference.huggingface.co/models/{HF_MODEL_ID}"
 
 UPLOAD_FOLDER.mkdir(exist_ok=True)
 STATIC_FOLDER.mkdir(exist_ok=True)
@@ -92,13 +97,15 @@ def allowed_file(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
-def prepare_image(img_path):
-    """Prepare an uploaded image for model prediction."""
+def prepare_image_for_hf(img_path):
+    """Convert image to base64 for Hugging Face API."""
     with Image.open(img_path) as img:
         img = img.convert("RGB").resize(IMG_SIZE)
-        img_array = np.asarray(img, dtype=np.float32)
-    img_array = np.expand_dims(img_array / 255.0, axis=0)
-    return img_array
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        buf.seek(0)
+        img_bytes = buf.read()
+    return base64.b64encode(img_bytes).decode("utf-8")
 
 
 def validate_mri_image(img_path):
@@ -177,22 +184,21 @@ def get_friendly_name(class_name):
 
 
 def load_prediction_model():
-    """Load the trained Keras model and return a model/error pair."""
-    if not MODEL_PATH.exists():
-        return None, f"Model file not found at {MODEL_PATH}"
-
+    """Validate Hugging Face API credentials and connectivity."""
+    if not HF_API_TOKEN:
+        return None, "HF_API_TOKEN environment variable not set"
+    
     try:
-        import tensorflow as tf
-        
-        loaded_model = tf.keras.models.load_model(MODEL_PATH, compile=False)
-        output_shape = loaded_model.output_shape
-        if output_shape[-1] != len(CLASS_NAMES):
-            raise ValueError(
-                f"Model outputs {output_shape[-1]} classes, expected {len(CLASS_NAMES)}"
-            )
-        return loaded_model, None
-    except Exception as exc:
-        return None, str(exc)
+        # Test API connectivity with a health check
+        headers = {"Authorization": f"Bearer {HF_API_TOKEN}"}
+        resp = requests.head(HF_API_URL, headers=headers, timeout=5)
+        if resp.status_code == 401:
+            return None, "Invalid HF_API_TOKEN"
+        elif resp.status_code == 404:
+            return None, f"Model not found: {HF_MODEL_ID}"
+        return {"token": HF_API_TOKEN, "url": HF_API_URL}, None
+    except requests.RequestException as exc:
+        return None, f"Hugging Face API unavailable: {str(exc)}"
 
 
 def load_model_metadata():
@@ -201,11 +207,7 @@ def load_model_metadata():
         return {}
 
     try:
-        import json
-
         metadata = json.loads(MODEL_METADATA_PATH.read_text(encoding="utf-8"))
-        if metadata.get("model_file") != MODEL_PATH.name:
-            return {}
         return metadata
     except Exception as exc:
         print(f"Model metadata could not be read: {exc}")
@@ -281,7 +283,7 @@ def model_info():
         {
             "model_loaded": model is not None,
             "model_error": model_load_error,
-            "model_file": MODEL_PATH.name,
+            "model_file": "hugging-face-api",
             "model_metadata": model_metadata,
             "image_size": IMG_SIZE,
             "classes": classes,
@@ -292,7 +294,7 @@ def model_info():
 
 @app.route("/api/predict", methods=["POST"])
 def predict():
-    """Handle prediction requests."""
+    """Handle prediction requests via Hugging Face API."""
     if model is None:
         return jsonify({"error": model_load_error or "Model not loaded."}), 500
 
@@ -318,20 +320,50 @@ def predict():
         if not is_mri:
             return jsonify({"error": err_msg}), 400
 
-        img_array = prepare_image(filepath)
-        predictions = model.predict(img_array, verbose=0)
+        # Prepare image for HF API
+        img_b64 = prepare_image_for_hf(filepath)
 
-        predicted_class_idx = int(np.argmax(predictions[0]))
-        predicted_class = CLASS_NAMES[predicted_class_idx]
-        confidence = float(predictions[0][predicted_class_idx])
-
-        all_probabilities = {
-            get_friendly_name(CLASS_NAMES[i]): round(float(predictions[0][i]), 6)
-            for i in range(len(CLASS_NAMES))
+        # Call Hugging Face inference API
+        headers = {
+            "Authorization": f"Bearer {model['token']}",
+            "Content-Type": "application/json"
         }
-        all_probabilities = dict(
-            sorted(all_probabilities.items(), key=lambda item: item[1], reverse=True)
+        payload = {
+            "inputs": img_b64,
+            "parameters": {}
+        }
+        
+        hf_response = requests.post(
+            model["url"],
+            headers=headers,
+            json=payload,
+            timeout=30
         )
+
+        if hf_response.status_code != 200:
+            return jsonify({
+                "error": f"Hugging Face API error: {hf_response.status_code}"
+            }), 500
+
+        predictions = hf_response.json()
+        
+        # Parse HF response format: list of dicts with "label" and "score"
+        if isinstance(predictions, list) and len(predictions) > 0:
+            # Sort by score descending
+            predictions = sorted(predictions, key=lambda x: x.get("score", 0), reverse=True)
+            
+            # Top prediction
+            top_pred = predictions[0]
+            predicted_class = top_pred.get("label", "unknown")
+            confidence = float(top_pred.get("score", 0))
+            
+            # All probabilities
+            all_probabilities = {
+                pred.get("label", f"class_{i}"): round(float(pred.get("score", 0)), 6)
+                for i, pred in enumerate(predictions)
+            }
+        else:
+            return jsonify({"error": "Invalid response from Hugging Face API"}), 500
 
         return jsonify(
             {
@@ -343,6 +375,10 @@ def predict():
             }
         )
 
+    except requests.Timeout:
+        return jsonify({"error": "Hugging Face API timeout"}), 504
+    except requests.RequestException as exc:
+        return jsonify({"error": f"Hugging Face API error: {str(exc)}"}), 503
     except Exception as exc:
         print(f"Error during prediction: {exc}")
         return jsonify({"error": str(exc)}), 500
