@@ -1,4 +1,4 @@
 flask
+tensorflow
 numpy
 Pillow
-onnxruntime

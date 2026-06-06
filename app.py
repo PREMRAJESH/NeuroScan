@@ -25,7 +25,7 @@ UPLOAD_FOLDER = BASE_DIR / "uploads"
 STATIC_FOLDER = BASE_DIR / "static"
 DATASET_FOLDER = BASE_DIR / "brain_tumor_dataset"
 MODEL_METADATA_PATH = BASE_DIR / "model_metadata.json"
-MODEL_PATH = BASE_DIR / "brain_tumor_model_efficientnet.onnx"
+MODEL_PATH = BASE_DIR / "brain_tumor_model_efficientnet.keras"
 
 UPLOAD_FOLDER.mkdir(exist_ok=True)
 STATIC_FOLDER.mkdir(exist_ok=True)
@@ -177,25 +177,20 @@ def get_friendly_name(class_name):
 
 
 def load_prediction_model():
-    """Load the trained ONNX model and return a session/error pair."""
+    """Load the trained Keras model and return a model/error pair."""
     if not MODEL_PATH.exists():
         return None, f"Model file not found at {MODEL_PATH}"
 
     try:
-        import onnxruntime as ort
-
-        session = ort.InferenceSession(str(MODEL_PATH), providers=["CPUExecutionProvider"])
-        input_info = session.get_inputs()[0]
-        output_info = session.get_outputs()[0]
-        if int(output_info.shape[-1]) != len(CLASS_NAMES):
+        import tensorflow as tf
+        
+        loaded_model = tf.keras.models.load_model(MODEL_PATH, compile=False)
+        output_shape = loaded_model.output_shape
+        if output_shape[-1] != len(CLASS_NAMES):
             raise ValueError(
-                f"Model outputs {output_info.shape[-1]} classes, expected {len(CLASS_NAMES)}"
+                f"Model outputs {output_shape[-1]} classes, expected {len(CLASS_NAMES)}"
             )
-        return {
-            "session": session,
-            "input_name": input_info.name,
-            "output_name": output_info.name,
-        }, None
+        return loaded_model, None
     except Exception as exc:
         return None, str(exc)
 
@@ -324,7 +319,7 @@ def predict():
             return jsonify({"error": err_msg}), 400
 
         img_array = prepare_image(filepath)
-        predictions = model["session"].run([model["output_name"]], {model["input_name"]: img_array})[0]
+        predictions = model.predict(img_array, verbose=0)
 
         predicted_class_idx = int(np.argmax(predictions[0]))
         predicted_class = CLASS_NAMES[predicted_class_idx]
