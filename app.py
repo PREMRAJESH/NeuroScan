@@ -108,7 +108,7 @@ def prepare_image_for_onnx(img_path):
     Converts PIL image to normalized numpy array matching EfficientNetB0 requirements:
     - Resized to 224x224
     - Normalized to [-1, 1] range (ImageNet preprocessing)
-    - Channel-first format (C, H, W)
+    - NHWC format (batch, height, width, channels)
     """
     with Image.open(img_path) as img:
         img = img.convert("RGB").resize(IMG_SIZE)
@@ -117,10 +117,7 @@ def prepare_image_for_onnx(img_path):
         # Normalize to [-1, 1] range (EfficientNet standard)
         img_array = (img_array / 127.5) - 1.0
         
-        # Convert from HWC to CHW format
-        img_array = np.transpose(img_array, (2, 0, 1))
-        
-        # Add batch dimension: CHW -> BCHW
+        # Add batch dimension: HWC -> BHWC (no transpose needed - keep channels-last)
         img_array = np.expand_dims(img_array, axis=0)
     
     return img_array
