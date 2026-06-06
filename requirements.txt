@@ -1,5 +1,5 @@
 flask
-onnxruntime
+onnxruntime-cpu
 numpy
 Pillow
 requests
