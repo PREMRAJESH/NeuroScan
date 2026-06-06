@@ -22,8 +22,11 @@ from werkzeug.utils import secure_filename
 app = Flask(__name__)
 
 BASE_DIR = Path(__file__).parent
-UPLOAD_FOLDER = BASE_DIR / "uploads"
 STATIC_FOLDER = BASE_DIR / "static"
+
+# Use /tmp for uploads on Vercel (read-only filesystem), local folder otherwise
+IS_VERCEL = os.environ.get("VERCEL") == "1"
+UPLOAD_FOLDER = Path("/tmp/uploads") if IS_VERCEL else BASE_DIR / "uploads"
 DATASET_FOLDER = BASE_DIR / "brain_tumor_dataset"
 MODEL_METADATA_PATH = BASE_DIR / "model_metadata.json"
 
@@ -32,8 +35,13 @@ HF_API_TOKEN = os.environ.get("HF_API_TOKEN", "")
 HF_MODEL_ID = os.environ.get("HF_MODEL_ID", "premrajesh/brain-tumor-detector")
 HF_API_URL = f"https://api-inference.huggingface.co/models/{HF_MODEL_ID}"
 
-UPLOAD_FOLDER.mkdir(exist_ok=True)
-STATIC_FOLDER.mkdir(exist_ok=True)
+# Create upload folder only if not on Vercel (which has read-only filesystem)
+if not IS_VERCEL:
+    UPLOAD_FOLDER.mkdir(exist_ok=True)
+    STATIC_FOLDER.mkdir(exist_ok=True)
+else:
+    # On Vercel/Lambda, /tmp is writable but may not exist yet
+    UPLOAD_FOLDER.mkdir(exist_ok=True, parents=True)
 
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
