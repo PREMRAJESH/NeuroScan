@@ -14,9 +14,9 @@ from uuid import uuid4
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 
 import numpy as np
-import tensorflow as tf
+import onnxruntime as ort
 from flask import Flask, Response, jsonify, request, send_from_directory
-from tensorflow.keras.preprocessing import image
+from PIL import Image
 from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
@@ -26,7 +26,7 @@ UPLOAD_FOLDER = BASE_DIR / "uploads"
 STATIC_FOLDER = BASE_DIR / "static"
 DATASET_FOLDER = BASE_DIR / "brain_tumor_dataset"
 MODEL_METADATA_PATH = BASE_DIR / "model_metadata.json"
-MODEL_PATH = BASE_DIR / "brain_tumor_model_efficientnet.keras"
+MODEL_PATH = BASE_DIR / "brain_tumor_model_efficientnet.onnx"
 
 UPLOAD_FOLDER.mkdir(exist_ok=True)
 STATIC_FOLDER.mkdir(exist_ok=True)
@@ -95,10 +95,11 @@ def allowed_file(filename):
 
 def prepare_image(img_path):
     """Prepare an uploaded image for model prediction."""
-    img = image.load_img(img_path, target_size=IMG_SIZE, color_mode="rgb")
-    img_array = image.img_to_array(img)
-    img_array = np.expand_dims(img_array, axis=0)
-    return img_array / 255.0
+    with Image.open(img_path) as img:
+        img = img.convert("RGB").resize(IMG_SIZE)
+        img_array = np.asarray(img, dtype=np.float32)
+    img_array = np.expand_dims(img_array / 255.0, axis=0)
+    return img_array
 
 
 def validate_mri_image(img_path):
@@ -177,18 +178,23 @@ def get_friendly_name(class_name):
 
 
 def load_prediction_model():
-    """Load the trained Keras model and return a model/error pair."""
+    """Load the trained ONNX model and return a session/error pair."""
     if not MODEL_PATH.exists():
         return None, f"Model file not found at {MODEL_PATH}"
 
     try:
-        loaded_model = tf.keras.models.load_model(MODEL_PATH, compile=False)
-        output_shape = loaded_model.output_shape
-        if output_shape[-1] != len(CLASS_NAMES):
+        session = ort.InferenceSession(str(MODEL_PATH), providers=["CPUExecutionProvider"])
+        input_info = session.get_inputs()[0]
+        output_info = session.get_outputs()[0]
+        if int(output_info.shape[-1]) != len(CLASS_NAMES):
             raise ValueError(
-                f"Model outputs {output_shape[-1]} classes, expected {len(CLASS_NAMES)}"
+                f"Model outputs {output_info.shape[-1]} classes, expected {len(CLASS_NAMES)}"
             )
-        return loaded_model, None
+        return {
+            "session": session,
+            "input_name": input_info.name,
+            "output_name": output_info.name,
+        }, None
     except Exception as exc:
         return None, str(exc)
 
@@ -317,7 +323,7 @@ def predict():
             return jsonify({"error": err_msg}), 400
 
         img_array = prepare_image(filepath)
-        predictions = model.predict(img_array, verbose=0)
+        predictions = model["session"].run([model["output_name"]], {model["input_name"]: img_array})[0]
 
         predicted_class_idx = int(np.argmax(predictions[0]))
         predicted_class = CLASS_NAMES[predicted_class_idx]

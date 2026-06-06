@@ -1,8 +1,4 @@
-tensorflow
-scikit-learn
-matplotlib
-opencv-python
-seaborn
-h5py
 flask
+numpy
 Pillow
+onnxruntime
