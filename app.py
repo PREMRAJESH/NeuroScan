@@ -1,8 +1,8 @@
 """
 Brain Tumor Detection - Flask Web Application.
 
-Provides a web interface for uploading MRI scans and getting predictions from
-a Hugging Face model inference API.
+Provides a web interface for uploading MRI scans and getting predictions using
+ONNX Runtime for fast, lightweight local inference.
 """
 
 import os
@@ -10,11 +10,10 @@ from html import escape
 from pathlib import Path
 from uuid import uuid4
 import json
-import base64
 import io
 
 import numpy as np
-import requests
+import onnxruntime as rt
 from flask import Flask, Response, jsonify, request, send_from_directory
 from PIL import Image
 from werkzeug.utils import secure_filename
@@ -30,10 +29,8 @@ UPLOAD_FOLDER = Path("/tmp/uploads") if IS_VERCEL else BASE_DIR / "uploads"
 DATASET_FOLDER = BASE_DIR / "brain_tumor_dataset"
 MODEL_METADATA_PATH = BASE_DIR / "model_metadata.json"
 
-# Hugging Face inference configuration
-HF_API_TOKEN = os.environ.get("HF_API_TOKEN", "")
-HF_MODEL_ID = os.environ.get("HF_MODEL_ID", "premrajesh/brain-tumor-detector")
-HF_API_URL = f"https://api-inference.huggingface.co/models/{HF_MODEL_ID}"
+# ONNX model configuration
+ONNX_MODEL_PATH = BASE_DIR / "brain_tumor_model_efficientnet.onnx"
 
 # Create upload folder only if not on Vercel (which has read-only filesystem)
 if not IS_VERCEL:
@@ -105,15 +102,28 @@ def allowed_file(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
-def prepare_image_for_hf(img_path):
-    """Convert image to base64 for Hugging Face API."""
+def prepare_image_for_onnx(img_path):
+    """Preprocess image for ONNX Runtime inference.
+    
+    Converts PIL image to normalized numpy array matching EfficientNetB0 requirements:
+    - Resized to 224x224
+    - Normalized to [-1, 1] range (ImageNet preprocessing)
+    - Channel-first format (C, H, W)
+    """
     with Image.open(img_path) as img:
         img = img.convert("RGB").resize(IMG_SIZE)
-        buf = io.BytesIO()
-        img.save(buf, format="PNG")
-        buf.seek(0)
-        img_bytes = buf.read()
-    return base64.b64encode(img_bytes).decode("utf-8")
+        img_array = np.array(img, dtype=np.float32)
+        
+        # Normalize to [-1, 1] range (EfficientNet standard)
+        img_array = (img_array / 127.5) - 1.0
+        
+        # Convert from HWC to CHW format
+        img_array = np.transpose(img_array, (2, 0, 1))
+        
+        # Add batch dimension: CHW -> BCHW
+        img_array = np.expand_dims(img_array, axis=0)
+    
+    return img_array
 
 
 def validate_mri_image(img_path):
@@ -192,21 +202,19 @@ def get_friendly_name(class_name):
 
 
 def load_prediction_model():
-    """Validate Hugging Face API credentials and connectivity."""
-    if not HF_API_TOKEN:
-        return None, "HF_API_TOKEN environment variable not set"
+    """Load ONNX Runtime inference session for the model."""
+    if not ONNX_MODEL_PATH.exists():
+        return None, f"Model file not found: {ONNX_MODEL_PATH}"
     
     try:
-        # Test API connectivity with a health check
-        headers = {"Authorization": f"Bearer {HF_API_TOKEN}"}
-        resp = requests.head(HF_API_URL, headers=headers, timeout=5)
-        if resp.status_code == 401:
-            return None, "Invalid HF_API_TOKEN"
-        elif resp.status_code == 404:
-            return None, f"Model not found: {HF_MODEL_ID}"
-        return {"token": HF_API_TOKEN, "url": HF_API_URL}, None
-    except requests.RequestException as exc:
-        return None, f"Hugging Face API unavailable: {str(exc)}"
+        # Create ONNX Runtime session with CPU execution provider
+        session = rt.InferenceSession(
+            str(ONNX_MODEL_PATH),
+            providers=["CPUExecutionProvider"]
+        )
+        return session, None
+    except Exception as exc:
+        return None, f"Failed to load ONNX model: {str(exc)}"
 
 
 def load_model_metadata():
@@ -291,7 +299,7 @@ def model_info():
         {
             "model_loaded": model is not None,
             "model_error": model_load_error,
-            "model_file": "hugging-face-api",
+            "model_file": "brain-tumor-model-efficientnet.onnx",
             "model_metadata": model_metadata,
             "image_size": IMG_SIZE,
             "classes": classes,
@@ -302,7 +310,7 @@ def model_info():
 
 @app.route("/api/predict", methods=["POST"])
 def predict():
-    """Handle prediction requests via Hugging Face API."""
+    """Handle prediction requests using ONNX Runtime local inference."""
     if model is None:
         return jsonify({"error": model_load_error or "Model not loaded."}), 500
 
@@ -328,50 +336,36 @@ def predict():
         if not is_mri:
             return jsonify({"error": err_msg}), 400
 
-        # Prepare image for HF API
-        img_b64 = prepare_image_for_hf(filepath)
+        # Preprocess image for ONNX Runtime
+        img_array = prepare_image_for_onnx(filepath)
 
-        # Call Hugging Face inference API
-        headers = {
-            "Authorization": f"Bearer {model['token']}",
-            "Content-Type": "application/json"
-        }
-        payload = {
-            "inputs": img_b64,
-            "parameters": {}
+        # Run inference with ONNX Runtime
+        input_name = model.get_inputs()[0].name
+        output_name = model.get_outputs()[0].name
+        
+        output_data = model.run([output_name], {input_name: img_array})[0]
+        
+        # Parse ONNX output: apply softmax to get probabilities
+        output_probs = np.exp(output_data - np.max(output_data)) / np.sum(np.exp(output_data - np.max(output_data)), axis=1)
+        
+        # Get predictions for all classes
+        predictions = output_probs[0]  # Take first (only) sample from batch
+        
+        # Create class-score mapping
+        class_scores = {
+            CLASS_NAMES[i]: float(predictions[i])
+            for i in range(len(CLASS_NAMES))
         }
         
-        hf_response = requests.post(
-            model["url"],
-            headers=headers,
-            json=payload,
-            timeout=30
-        )
-
-        if hf_response.status_code != 200:
-            return jsonify({
-                "error": f"Hugging Face API error: {hf_response.status_code}"
-            }), 500
-
-        predictions = hf_response.json()
+        # Find top prediction
+        predicted_class = max(class_scores, key=class_scores.get)
+        confidence = class_scores[predicted_class]
         
-        # Parse HF response format: list of dicts with "label" and "score"
-        if isinstance(predictions, list) and len(predictions) > 0:
-            # Sort by score descending
-            predictions = sorted(predictions, key=lambda x: x.get("score", 0), reverse=True)
-            
-            # Top prediction
-            top_pred = predictions[0]
-            predicted_class = top_pred.get("label", "unknown")
-            confidence = float(top_pred.get("score", 0))
-            
-            # All probabilities
-            all_probabilities = {
-                pred.get("label", f"class_{i}"): round(float(pred.get("score", 0)), 6)
-                for i, pred in enumerate(predictions)
-            }
-        else:
-            return jsonify({"error": "Invalid response from Hugging Face API"}), 500
+        # Sort all probabilities
+        all_probabilities = {
+            class_name: round(score, 6)
+            for class_name, score in sorted(class_scores.items(), key=lambda x: x[1], reverse=True)
+        }
 
         return jsonify(
             {
@@ -383,10 +377,6 @@ def predict():
             }
         )
 
-    except requests.Timeout:
-        return jsonify({"error": "Hugging Face API timeout"}), 504
-    except requests.RequestException as exc:
-        return jsonify({"error": f"Hugging Face API error: {str(exc)}"}), 503
     except Exception as exc:
         print(f"Error during prediction: {exc}")
         return jsonify({"error": str(exc)}), 500
