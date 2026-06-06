@@ -6,6 +6,7 @@ the trained local Keras model.
 """
 
 import os
+from html import escape
 from pathlib import Path
 from uuid import uuid4
 
@@ -14,7 +15,7 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 
 import numpy as np
 import tensorflow as tf
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, Response, jsonify, request, send_from_directory
 from tensorflow.keras.preprocessing import image
 from werkzeug.utils import secure_filename
 
@@ -65,6 +66,26 @@ ARTIFACT_FILES = {
     "training-history": "static/images/training_history.png",
     "gradcam": "static/images/gradcam_brain_tumor.png",
 }
+
+
+def build_sample_placeholder(class_name, label):
+        """Return a lightweight inline placeholder when dataset samples are absent."""
+        safe_class_name = escape(class_name)
+        safe_label = escape(label)
+        svg = f"""<svg xmlns='http://www.w3.org/2000/svg' width='720' height='480' viewBox='0 0 720 480' role='img' aria-label='{safe_label} sample unavailable'>
+    <defs>
+        <linearGradient id='bg' x1='0%' y1='0%' x2='100%' y2='100%'>
+            <stop offset='0%' stop-color='#0f1722'/>
+            <stop offset='100%' stop-color='#1f3042'/>
+        </linearGradient>
+    </defs>
+    <rect width='720' height='480' rx='28' fill='url(#bg)'/>
+    <rect x='56' y='56' width='608' height='368' rx='24' fill='none' stroke='#4b667d' stroke-width='2' stroke-dasharray='10 10' opacity='0.8'/>
+    <text x='50%' y='44%' fill='#f2f6fb' font-family='Arial, Helvetica, sans-serif' font-size='34' font-weight='700' text-anchor='middle'>{safe_label}</text>
+    <text x='50%' y='53%' fill='#a9bbca' font-family='Arial, Helvetica, sans-serif' font-size='20' text-anchor='middle'>Sample image not bundled in deployment</text>
+    <text x='50%' y='61%' fill='#8aa0b3' font-family='Arial, Helvetica, sans-serif' font-size='16' text-anchor='middle'>Class key: {safe_class_name}</text>
+</svg>"""
+        return Response(svg, mimetype="image/svg+xml")
 
 
 def allowed_file(filename):
@@ -225,7 +246,12 @@ def serve_sample(class_name):
     detail = CLASS_DETAILS.get(class_name)
     if not detail:
         return jsonify({"error": "Sample class not found"}), 404
-    return send_from_directory(DATASET_FOLDER, detail["sample"])
+
+    sample_path = DATASET_FOLDER / detail["sample"]
+    if sample_path.exists():
+        return send_from_directory(DATASET_FOLDER, detail["sample"])
+
+    return build_sample_placeholder(class_name, detail["label"])
 
 
 @app.route("/api/model-info", methods=["GET"])

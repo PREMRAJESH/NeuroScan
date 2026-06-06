@@ -1,0 +1,9 @@
+brain_tumor_dataset/
+brain_tumor_detection.ipynb
+train_efficientnet_head.py
+test_model.py
+test_validation.py
+check_classes.py
+__pycache__/
+*.pyc
+uploads/
