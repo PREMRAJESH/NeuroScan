@@ -12,11 +12,12 @@ The application leverages a deep learning model based on the **EfficientNetB0** 
 
 ## 🚀 Key Features
 
-* **Efficient Local Inference:** Executes model inference locally using a pre-compiled TensorFlow/Keras runtime.
-* **Advanced Medical Validation:** Integrated image guardrails check structural features (dark background, central brain structures, grayscale channels) to prevent non-MRI or color images from being processed.
-* **Interactive Workbench UI:** A premium, modern interface featuring a dark clinical theme, subtle micro-animations, progress tracking, and custom diagnostic cards.
-* **Glassmorphic Lightbox Modal:** Open model training history, confusion matrices, and Grad-CAM attention maps in a responsive full-screen modal view.
-* **Fully Responsive:** Layouts adapt seamlessly from widescreen workstations down to ultra-compact mobile screen dimensions.
+* **Optimized Local Inference:** Executes local model inference using **ONNX Runtime** (`onnxruntime`). This removes the need for a heavy TensorFlow dependency in the production runtime, resulting in lower memory usage, faster response times, and smaller deployment size.
+* **Advanced Medical Validation:** Integrated image guardrails check structural features (grayscale channels, dark border, central brain contrast, and tissue structure checks) to prevent non-MRI or color images from being processed.
+* **Interactive Workbench UI:** A premium, modern interface featuring a dark clinical theme, subtle micro-animations, upload progress tracking, and interactive diagnostic results.
+* **Glassmorphic Lightbox Modal:** View model training history, confusion matrices, and Grad-CAM activation maps in a highly polished, responsive lightbox.
+* **Vercel Serverless Compatibility:** Optimized to run seamlessly on Vercel serverless environments with a small runtime memory footprint and safe `/tmp` directory handling.
+* **Fully Responsive:** Layouts adapt dynamically from widescreen desktops to mobile devices.
 
 ---
 
@@ -44,6 +45,12 @@ To map extracted features to the brain tumor categories, a custom head was appen
 - **Early Stopping:** Monitored validation accuracy with a patience window of 8 epochs, restoring the best model weights dynamically.
 - **Evaluation Performance:** Tested on independent datasets, yielding a **94.05% test accuracy**.
 
+### 4. ONNX Inference Optimization
+To achieve lightning-fast response times and ultra-lightweight deployments:
+- **Format:** The trained Keras (`.keras`) model was exported to ONNX (`.onnx`) format using the `tf2onnx` library.
+- **Lightweight Runtime:** Switched from standard TensorFlow to `onnxruntime`, dropping the container/package size constraint significantly.
+- **Pipeline Adjustments:** Cleaned up the input preprocessing pipeline to handle normalized `[0, 1]` floats in NHWC format, directly matching the ONNX input signature.
+
 ---
 
 ## 🛡️ Image Preprocessing & Clinical Guardrails
@@ -61,15 +68,18 @@ To prevent incorrect diagnostic signals, the Flask API evaluates every uploaded 
 
 ## 📁 Project Structure
 
+Below is the visual overview and clean tree layout of the application's workspace:
+
+![Project Structure Diagram](static/images/project_structure_viz.png)
+
 ```text
-├── app.py                            # Flask application server, API, and validation logic
-├── brain_tumor_model_efficientnet.keras # Saved production TensorFlow model
+├── app.py                            # Flask application server, API, and validation logic (configured for ONNX Runtime)
+├── brain_tumor_model_efficientnet.onnx  # Optimized ONNX model used for local production inference
 ├── model_metadata.json               # Model metrics (accuracy, epochs, backbone metadata)
-├── train_efficientnet_head.py        # Model training and feature extraction pipeline
-├── test_model.py                     # Automated model inference validation checks
-├── test_validation.py                # Automated image validation and guardrail checks
-├── requirements.txt                  # Python application dependencies
-├── brain_tumor_dataset/              # Original training & testing dataset split
+├── requirements.txt                  # Python application dependencies (Flask, ONNX Runtime, etc.)
+├── .python-version                   # Specifies Python runtime version (3.11)
+├── vercel.json                       # Vercel deployment routing and configuration
+├── .vercelignore                     # Excludes unnecessary files from Vercel bundle
 ├── static/
 │   ├── index.html                    # Workbench HTML structure & modal layout
 │   ├── style.css                     # Main stylesheet with mobile responsive grids
@@ -78,7 +88,9 @@ To prevent incorrect diagnostic signals, the Flask API evaluates every uploaded 
 │       ├── confusion_matrix.png      # Matrix of true vs. predicted model outputs
 │       ├── training_history.png      # Training/Validation accuracy and loss curves
 │       └── gradcam_brain_tumor.png   # Model activation overlays indicating focus areas
-└── uploads/                          # Temporary workspace directory for file uploads
+│       ├── samples/                  # Representative static MRI sample images for each class
+│       └── project_structure_viz.png # Visual diagram of the project structure
+└── uploads/                          # Temporary workspace directory for file uploads (local only)
 ```
 
 ---
@@ -86,11 +98,11 @@ To prevent incorrect diagnostic signals, the Flask API evaluates every uploaded 
 ## 🛠️ Installation & Setup
 
 ### Prerequisites
-- Python 3.9+
-- TensorFlow 2.10+ (included in `requirements.txt`)
+- Python 3.11 (highly recommended; matches Vercel target runtime)
+- No TensorFlow installation is needed to run the web application (handled via `onnxruntime`)
 
 ### Step 1: Clone and Install Dependencies
-Install all required libraries within your Python environment or virtual environment:
+Install the lightweight application dependencies:
 ```bash
 pip install -r requirements.txt
 ```
@@ -100,35 +112,29 @@ Launch the application locally:
 ```bash
 python app.py
 ```
-The console will confirm that the model loaded successfully and show the server URL:
+The console will confirm that the model loaded successfully using ONNX Runtime and display the local development server URL:
 ```text
 ============================================================
 Brain Tumor Detection - Web Application
 ============================================================
 
 Starting server...
+Upload folder: C:\Users\...\uploads
 Model loaded: Yes
+Debug mode: Off
+
 Open your browser and go to: http://localhost:5000
 ============================================================
 ```
 
 ---
 
-## 🧪 Testing
+## 🌐 Serverless Deployment (Vercel)
 
-The codebase includes automated test suites to ensure model loading, inference correctness, and validation rules remain reliable.
-
-### Run Model Inference Tests
-```bash
-python test_model.py
-```
-*Validates that the model correctly classifies baseline tumor patterns.*
-
-### Run Guardrail Validation Tests
-```bash
-python test_validation.py
-```
-*Validates that the image check rules block color images, empty black images, and non-MRI files.*
+This application is ready for serverless deployment on **Vercel**:
+* **Runtime Optimization:** Runs under Python 3.11 using CPU-optimized `onnxruntime` execution provider, avoiding large binary limits.
+* **Temporary Filesystem:** Write operations during image uploads dynamically target `/tmp/uploads` since the main container directory is read-only.
+* **Asset Exclusions:** Bulky files are excluded via `.vercelignore` to keep lambda sizes optimal.
 
 ---
 
@@ -136,3 +142,4 @@ python test_validation.py
 
 > [!WARNING]
 > This system is designed solely as an **educational prototype and research signal**. The predictions generated by the EfficientNetB0 model should not be used as professional medical advice, clinical diagnosis, treatment planning, or to make patient-care decisions. All diagnosis must be performed by qualified healthcare professionals using official, certified medical diagnostics.
+
