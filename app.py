@@ -104,22 +104,26 @@ def allowed_file(filename):
 
 def prepare_image_for_onnx(img_path):
     """Preprocess image for ONNX Runtime inference.
-    
-    Converts PIL image to normalized numpy array matching EfficientNetB0 requirements:
-    - Resized to 224x224
-    - Normalized to [-1, 1] range (ImageNet preprocessing)
-    - NHWC format (batch, height, width, channels)
+
+    The full model exported to ONNX was built with a Rescaling(255.0) layer
+    immediately after the input, so it expects pixel values in [0, 1] float32.
+    The EfficientNetB0 backbone then receives [0, 255] internally.
+
+    Pipeline:
+    - Resize to 224 x 224
+    - Convert to float32 in [0, 1]  (divide by 255)
+    - Add batch dimension: HWC -> BHWC
     """
     with Image.open(img_path) as img:
         img = img.convert("RGB").resize(IMG_SIZE)
         img_array = np.array(img, dtype=np.float32)
-        
-        # Normalize to [-1, 1] range (EfficientNet standard)
-        img_array = (img_array / 127.5) - 1.0
-        
-        # Add batch dimension: HWC -> BHWC (no transpose needed - keep channels-last)
+
+        # Normalize to [0, 1] – the model's Rescaling(255) layer handles the rest
+        img_array = img_array / 255.0
+
+        # Add batch dimension: HWC -> BHWC
         img_array = np.expand_dims(img_array, axis=0)
-    
+
     return img_array
 
 
@@ -339,26 +343,24 @@ def predict():
         # Run inference with ONNX Runtime
         input_name = model.get_inputs()[0].name
         output_name = model.get_outputs()[0].name
-        
+
         output_data = model.run([output_name], {input_name: img_array})[0]
-        
-        # Parse ONNX output: apply softmax to get probabilities
-        output_probs = np.exp(output_data - np.max(output_data)) / np.sum(np.exp(output_data - np.max(output_data)), axis=1)
-        
-        # Get predictions for all classes
-        predictions = output_probs[0]  # Take first (only) sample from batch
-        
+
+        # The ONNX model already includes a softmax activation in the final Dense
+        # layer, so output_data is already a probability distribution.
+        predictions = output_data[0]  # Take first (only) sample from batch
+
         # Create class-score mapping
         class_scores = {
             CLASS_NAMES[i]: float(predictions[i])
             for i in range(len(CLASS_NAMES))
         }
-        
+
         # Find top prediction
         predicted_class = max(class_scores, key=class_scores.get)
         confidence = class_scores[predicted_class]
-        
-        # Sort all probabilities
+
+        # Sort all probabilities high → low
         all_probabilities = {
             class_name: round(score, 6)
             for class_name, score in sorted(class_scores.items(), key=lambda x: x[1], reverse=True)

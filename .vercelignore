@@ -7,3 +7,6 @@ check_classes.py
 __pycache__/
 *.pyc
 uploads/
+brain_tumor_model_efficientnet.keras
+convert_to_onnx.py
+test_img.png
