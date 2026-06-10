@@ -68,3 +68,5 @@ uploads/
 
 # Virtual environment
 .venv/
+
+.vercel

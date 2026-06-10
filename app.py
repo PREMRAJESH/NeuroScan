@@ -268,6 +268,12 @@ def serve_sample(class_name):
     if not detail:
         return jsonify({"error": "Sample class not found"}), 404
 
+    # Try static images first (bundled in Vercel deployment)
+    static_sample_path = STATIC_FOLDER / "images" / "samples" / f"{class_name}.jpg"
+    if static_sample_path.exists():
+        return send_from_directory(STATIC_FOLDER / "images" / "samples", f"{class_name}.jpg")
+
+    # Fallback to local dataset folder if available (for local testing)
     sample_path = DATASET_FOLDER / detail["sample"]
     if sample_path.exists():
         return send_from_directory(DATASET_FOLDER, detail["sample"])
