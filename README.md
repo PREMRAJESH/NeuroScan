@@ -68,30 +68,9 @@ To prevent incorrect diagnostic signals, the Flask API evaluates every uploaded 
 
 ## 📁 Project Structure
 
-Below is the visual overview and clean tree layout of the application's workspace:
+Below is the visual overview of the application's workspace:
 
 ![Project Structure Diagram](static/images/project_structure_viz.png)
-
-```text
-├── app.py                            # Flask application server, API, and validation logic (configured for ONNX Runtime)
-├── brain_tumor_model_efficientnet.onnx  # Optimized ONNX model used for local production inference
-├── model_metadata.json               # Model metrics (accuracy, epochs, backbone metadata)
-├── requirements.txt                  # Python application dependencies (Flask, ONNX Runtime, etc.)
-├── .python-version                   # Specifies Python runtime version (3.11)
-├── vercel.json                       # Vercel deployment routing and configuration
-├── .vercelignore                     # Excludes unnecessary files from Vercel bundle
-├── static/
-│   ├── index.html                    # Workbench HTML structure & modal layout
-│   ├── style.css                     # Main stylesheet with mobile responsive grids
-│   ├── script.js                     # File upload, AJAX API client, and DOM interactions
-│   └── images/                       # Model evaluation artifacts & visualizations
-│       ├── confusion_matrix.png      # Matrix of true vs. predicted model outputs
-│       ├── training_history.png      # Training/Validation accuracy and loss curves
-│       └── gradcam_brain_tumor.png   # Model activation overlays indicating focus areas
-│       ├── samples/                  # Representative static MRI sample images for each class
-│       └── project_structure_viz.png # Visual diagram of the project structure
-└── uploads/                          # Temporary workspace directory for file uploads (local only)
-```
 
 ---
 
